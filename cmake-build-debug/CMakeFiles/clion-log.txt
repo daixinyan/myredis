@@ -1,1 +1,0 @@
-CMakeLists.txt not found in H:\code\cppspace\redis-3.2.8
