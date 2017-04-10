@@ -122,6 +122,14 @@ struct redisServer server; /* server global state */
  *    Note that commands that may trigger a DEL as a side effect (like SET)
  *    are not fast commands.
  */
+ /**
+  * 名称， 回调函数， 参数个数， sflags字符串表示，flags位图表示，
+  * 获取key的回调函数，第一个参数是key，最后一个参数是key， 每组参数的个数
+  * microseconds
+  * calls: total number of calls of this command.
+  *
+  * 参数个数：-N 即 >= N
+  */
 struct redisCommand redisCommandTable[] = {
     {"get",getCommand,2,"rF",0,NULL,1,1,1,0,0},
     {"set",setCommand,-3,"wm",0,NULL,1,1,1,0,0},
@@ -305,6 +313,12 @@ struct evictionPoolEntry *evictionPoolAlloc(void);
 
 /* Low level logging. To use only for very big messages, otherwise
  * serverLog() is to prefer. */
+ /***
+  * 低层次的日志。
+  * 只有非常大的消息才会使用，否则serverLog()
+  * @param level
+  * @param msg
+  */
 void serverLogRaw(int level, const char *msg) {
     const int syslogLevelMap[] = { LOG_DEBUG, LOG_INFO, LOG_NOTICE, LOG_WARNING };
     const char *c = ".-*#";
@@ -349,6 +363,15 @@ void serverLogRaw(int level, const char *msg) {
 /* Like serverLogRaw() but with printf-alike support. This is the function that
  * is used across the code. The raw version is only used in order to dump
  * the INFO output on crash. */
+ /**
+  *
+  * 类似于serverLogRaw() 但是提供printf风格的支持。
+  * 横贯于代码中使用。
+  * 原版本只用于on crash时输出信息
+  * @param level
+  * @param fmt
+  * @param ...
+  */
 void serverLog(int level, const char *fmt, ...) {
     va_list ap;
     char msg[LOG_MAX_LEN];
@@ -391,6 +414,7 @@ err:
 }
 
 /* Return the UNIX time in microseconds */
+/**返回微秒为单位的unix时间**/
 long long ustime(void) {
     struct timeval tv;
     long long ust;
@@ -402,6 +426,7 @@ long long ustime(void) {
 }
 
 /* Return the UNIX time in milliseconds */
+/**返回毫秒为单位的unix时间**/
 mstime_t mstime(void) {
     return ustime()/1000;
 }
@@ -1088,7 +1113,28 @@ void updateCachedTime(void) {
  * so in order to throttle execution of things we want to do less frequently
  * a macro is used: run_with_period(milliseconds) { .... }
  */
-
+ /**
+  * 这是我们的定时器中断每秒被调用server.hz次
+  * 在这里我们会做一些需要异步执行的任务：
+  * 例如：
+  *  清理数据库中的过期键值对
+  *  软件监视
+  *  更新服务器的各类统计信息，比如时间、内存占用、数据库占用情况等
+  *  数据库哈希表的增量重哈希
+  *  尝试进行 AOF 或 RDB 持久化操作
+  *  关闭清理各种原因引起的掉线客户端
+  *  如果服务器是主节点的话，对附属节点进行定期同步
+  *  如果处于集群模式的话，对集群进行定期同步和连接测试
+  *
+  * Redis 将 serverCron 作为时间事件来运行， 从而确保它每隔一段时间就会自动运行一次，
+  * 又因为   serverCron 需要在 Redis 服务器运行期间一直定期运行， 所以它是一个循环时间事件：
+  * serverCron 会一直定期执行，直到服务器关闭为止
+  *
+  * @param eventLoop
+  * @param id
+  * @param clientData
+  * @return
+  */
 int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     int j;
     UNUSED(eventLoop);
@@ -1097,11 +1143,17 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 
     /* Software watchdog: deliver the SIGALRM that will reach the signal
      * handler if we don't return here fast enough. */
+     /**
+      * 如果设置了watchdog_period，那么每过watchdog_period，都会发送sigalrm信号
+      * 该信号又会得到处理，来记录此时执行的命令。
+      * 这个过程主要是为了了解一些过长命令的执行影响服务器的整体运行，是一个debug过程
+      * */
     if (server.watchdog_period) watchdogScheduleSignal(server.watchdog_period);
 
     /* Update the time cache. */
     updateCachedTime();
 
+    /**每百微秒记录过去每秒的命令执行情况*/
     run_with_period(100) {
         trackInstantaneousMetric(STATS_METRIC_COMMAND,server.stat_numcommands);
         trackInstantaneousMetric(STATS_METRIC_NET_INPUT,
@@ -1165,9 +1217,23 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     }
 
     /* We need to do a few operations on clients asynchronously. */
+    /**
+     * 每次调用clientCron，这是一个对server.clients列表进行处理的过程。
+     * 在每次执行clientCron时，会对server.clients进行迭代，
+     * 并且保证 1/(REDIS_HZ*10) 的客户端每次调用。
+     * 也就是每次执行clientCron，如果clients过多，
+     * clientCron不会遍历所有clients，而是遍历一部分clients，
+     * 但是保证每个clients都会在一定时间内得到处理。
+     * 处理过程主要是检测client连接是否idle超时，或者block超时，
+     * 然后会调整每个client的缓冲区大小
+     */
     clientsCron();
 
     /* Handle background operations on Redis databases. */
+    /**
+     * 每次都尝试resize每个db，resize是让每个db的dict结构进入rehash状态，
+     * rehash是为了扩容dict或者缩小dict。然后每次都尝试执行每个db的rehash过程一微秒
+     */
     databasesCron();
 
     /* Start a scheduled AOF rewrite if this was requested by the user while
@@ -1179,6 +1245,9 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     }
 
     /* Check if a background saving or AOF rewrite in progress terminated. */
+    /**
+     * 对aof，rdb等过程进行开启或终结
+     */
     if (server.rdb_child_pid != -1 || server.aof_child_pid != -1 ||
         ldbPendingChildren())
     {
@@ -1264,6 +1333,9 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     }
 
     /* Close clients that need to be closed asynchronous */
+    /**
+     * 对异步io过程中可能需要关闭的clients进行处理
+     */
     freeClientsInAsyncFreeQueue();
 
     /* Clear the paused clients flag if needed. */
@@ -1358,6 +1430,26 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
 
 /* =========================== Server initialization ======================== */
 
+
+
+
+/**
+ *  * 创建共享对象。
+ *      redisObject这个struct里有个变量叫做refcount，这个变量就是用来实现共享的。
+ *      Redis的对象目前Redis只支持共享StringObject。
+ *      Redis的共享对象有两大类比：
+ *              第一类：Redis server的各种操作需要经常用到的各类对象，
+ *                      如：Redis Command的分隔符 "\r\n",
+ *                          用于Redis command的reply的"+OK\r\n"或者"-ERR\r\n"等对象，
+ *                          因为在Redis的各种操作这类对象要被频繁使用，所以就在启动Redis的时候创建好，
+ *                          然后共用这些对象，减少时间成本和空间成本；
+ *              第二，类的共享对象就是对应于数字的StringObject，
+ *                      如：Set "olylakers1" 1234; Set "olylakes2" 1234;
+ *                          在Redis内部，"olylakers1"和"olylakers2"这两个key都指向由数字1234转化的StringObject。
+ *                          这样在海量数据和特定存储内容下，可以节省大量的内存空间。
+ *                          可用通过REDIS_SHARED_INTEGERS这个参数来指定Redis启动的时候创建多少个第二类共享对象，
+ *                          默认的参数是10000，即创建的StrongObject个取值范围是0-9999之间。
+ */
 void createSharedObjects(void) {
     int j;
 
@@ -1859,6 +1951,30 @@ void resetServerStats(void) {
     server.aof_delayed_fsync = 0;
 }
 
+
+/**
+ * 创建用来维护clients和slaves的list
+ *
+ * 创建共享对象。
+ *      redisObject这个struct里有个变量叫做refcount，这个变量就是用来实现共享的。
+ *      Redis的对象目前Redis只支持共享StringObject。
+ *      Redis的共享对象有两大类比：
+ *              第一类：Redis server的各种操作需要经常用到的各类对象，
+ *                      如：Redis Command的分隔符 "\r\n",
+ *                          用于Redis command的reply的"+OK\r\n"或者"-ERR\r\n"等对象，
+ *                          因为在Redis的各种操作这类对象要被频繁使用，所以就在启动Redis的时候创建好，
+ *                          然后共用这些对象，减少时间成本和空间成本；
+ *              第二，类的共享对象就是对应于数字的StringObject，
+ *                      如：Set "olylakers1" 1234; Set "olylakes2" 1234;
+ *                          在Redis内部，"olylakers1"和"olylakers2"这两个key都指向由数字1234转化的StringObject。
+ *                          这样在海量数据和特定存储内容下，可以节省大量的内存空间。
+ *                          可用通过REDIS_SHARED_INTEGERS这个参数来指定Redis启动的时候创建多少个第二类共享对象，
+ *                          默认的参数是10000，即创建的StrongObject个取值范围是0-9999之间。
+ *
+ * 创建Pub/Sub通道
+ *      初始化网络监听EventLoop的相关内容，如eventLoop，timeEvent，fileEvent等
+ *      如果开启了VM，则初始化虚拟内存相关的IO/Thread
+ */
 void initServer(void) {
     int j;
 
@@ -2003,6 +2119,9 @@ void initServer(void) {
 
 /* Populates the Redis Command Table starting from the hard coded list
  * we have on top of redis.c file. */
+ /**
+  * 使用redis.c首部硬编码的实现的命令表来初始化redis命令表
+  */
 void populateCommandTable(void) {
     int j;
     int numcommands = sizeof(redisCommandTable)/sizeof(struct redisCommand);
