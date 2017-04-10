@@ -1188,6 +1188,7 @@ void updateCachedTime(void) {
   * @param clientData
   * @return
   */
+
 int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     int j;
     UNUSED(eventLoop);
@@ -1430,7 +1431,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     }
 
     server.cronloops++;
-    return 1000/server.hz;
+    return 1000/server.hz;/**返回值的意思：1000/server.hz 微秒后执行**/
 }
 
 /* This function gets called every time Redis is entering the
@@ -2123,6 +2124,7 @@ void initServer(void) {
 
     /* Create the serverCron() time event, that's our main way to process
      * background operations. */
+    /**serverCron注册为定时事件**/
     if(aeCreateTimeEvent(server.el, 1, serverCron, NULL, NULL) == AE_ERR) {
         serverPanic("Can't create the serverCron time event.");
         exit(1);
