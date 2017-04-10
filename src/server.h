@@ -458,8 +458,8 @@ typedef long long mstime_t; /* millisecond time type. */
 
 /* The actual Redis Object */
 #define LRU_BITS 24
-#define LRU_CLOCK_MAX ((1<<LRU_BITS)-1) /* Max value of obj->lru */
-#define LRU_CLOCK_RESOLUTION 1000 /* LRU clock resolution in ms */
+#define LRU_CLOCK_MAX ((1<<LRU_BITS)-1) /* Max value of obj->lru *//**23个1**/
+#define LRU_CLOCK_RESOLUTION 1000 /* LRU clock resolution in ms *//**精度**/
 typedef struct redisObject {
     unsigned type:4;
     unsigned encoding:4;
@@ -492,6 +492,12 @@ typedef struct redisObject {
  * greater idle times to the right (ascending order).
  *
  * Empty entries have the key pointer set to NULL. */
+/**
+ * 为了提高LRU最近最少使用算法回收效率，我们使用了一个一个集合（回收池）存储那些可能的回收对象的键值，
+ * 通过freeMemoryIfNeeded 函数回收。
+ *
+ * 回收池中的条目entry 是根据 未使用的时间（idle time） 有序的去取出，时间越久，越靠右边（升序）
+ */
 #define MAXMEMORY_EVICTION_POOL_SIZE 16
 struct evictionPoolEntry {
     unsigned long long idle;    /* Object idle time. */

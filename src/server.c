@@ -307,6 +307,10 @@ struct redisCommand redisCommandTable[] = {
     {"latency",latencyCommand,-2,"aslt",0,NULL,0,0,0,0,0}
 };
 
+/**
+ * 回收池，for LRU
+ * @return
+ */
 struct evictionPoolEntry *evictionPoolAlloc(void);
 
 /*============================ Utility functions ============================ */
@@ -391,6 +395,17 @@ void serverLog(int level, const char *fmt, ...) {
  * We actually use this only for signals that are not fatal from the point
  * of view of Redis. Signals that are going to kill the server anyway and
  * where we need printf-alike features are served by serverLog(). */
+/**
+ * 将固定的字符串信息写入日志，不提供printf风格的方式。
+ * 这样可以在signal handler中安全的调用。
+ *
+ * 事实上我们只在处理对于redis来说是致命的信号的时候使用这个函数。
+ *
+ * 会关闭服务或者需要printf风格的信号会使用serverlog写入日志
+ *
+ * @param level
+ * @param msg
+ */
 void serverLogFromHandler(int level, const char *msg) {
     int fd;
     int log_to_stdout = server.logfile[0] == '\0';
@@ -448,6 +463,10 @@ void exitFromChild(int retcode) {
 /* This is a hash table type that uses the SDS dynamic strings library as
  * keys and redis objects as values (objects can hold SDS strings,
  * lists, sets). */
+/***==================== hash table 类型 实现   ==============================***/
+/***sds 字符串为key, redis object 作为value（可以包含sds, lists, set等） ***/
+
+
 
 void dictVanillaFree(void *privdata, void *val)
 {
@@ -692,7 +711,7 @@ int htNeedsResize(dict *dict) {
     size = dictSlots(dict);
     used = dictSize(dict);
     return (size > DICT_HT_INITIAL_SIZE &&
-            (used*100/size < HASHTABLE_MIN_FILL));
+            (used*100/size < HASHTABLE_MIN_FILL));/**最小的 hash table 填满 10%**/
 }
 
 /* If the percentage of used slots in the HT reaches HASHTABLE_MIN_FILL
@@ -711,6 +730,17 @@ void tryResizeHashTables(int dbid) {
  *
  * The function returns 1 if some rehashing was performed, otherwise 0
  * is returned. */
+/**
+ *
+ * 我们的哈希表实现采用增量重哈希：每当我们对哈希表采用一个读写操作便增量哈希
+ *
+ * 如果服务一直空置，哈希表会一直持有两个哈希表。
+ * 所以每次调用这个函数，会尝试使用1ms的CPU时间执行rehash。
+ *
+ * 如果执行了哈希函数没有执行返回0，如果执行了返回1
+ * @param dbid
+ * @return
+ */
 int incrementallyRehash(int dbid) {
     /* Keys dictionary */
     if (dictIsRehashing(server.db[dbid].dict)) {
@@ -751,6 +781,21 @@ void updateDictResizePolicy(void) {
  *
  * The parameter 'now' is the current time in milliseconds as is passed
  * to the function to avoid too many gettimeofday() syscalls. */
+/**
+ * activeExpireCycle函数的工具函数。
+ * 这个函数会尝试使redis数据库的expires哈希表的de哈希项键值失效
+ *
+ * 如果键值超期，数据库删除该项并返回1，否则不执行操作返回0
+ *
+ * 当一个键值超期，server.stat_expirtedkeys 增1
+ *
+ * 参数now 是当前微秒时间，这是为了避免太多的gettimeofday 系统调用
+ *
+ * @param db
+ * @param de
+ * @param now
+ * @return
+ */
 int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
     long long t = dictGetSignedIntegerVal(de);
     if (now > t) {
@@ -790,13 +835,16 @@ int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
  * If type is ACTIVE_EXPIRE_CYCLE_SLOW, that normal expire cycle is
  * executed, where the time limit is a percentage of the REDIS_HZ period
  * as specified by the REDIS_EXPIRELOOKUPS_TIME_PERC define. */
-
+/**
+ * 清除过期key
+ */
 void activeExpireCycle(int type) {
     /* This function has some global state in order to continue the work
      * incrementally across calls. */
-    static unsigned int current_db = 0; /* Last DB tested. */
-    static int timelimit_exit = 0;      /* Time limit hit in previous call? */
-    static long long last_fast_cycle = 0; /* When last fast cycle ran. */
+    /**这个函数拥有并操作一些全局变量以在多次call方法中继续工作**/
+    static unsigned int current_db = 0; /* Last DB tested. *//**上一个测试的DB**/
+    static int timelimit_exit = 0;      /* Time limit hit in previous call? *//****/
+    static long long last_fast_cycle = 0; /* When last fast cycle ran. *//****/
 
     int j, iteration = 0;
     int dbs_per_call = CRON_DBS_PER_CALL;
@@ -913,6 +961,11 @@ void activeExpireCycle(int type) {
     }
 }
 
+/**
+ * getLRUClock：
+ * 获取当前系统的毫秒数，计算LRU时钟数。
+ * @return
+ */
 unsigned int getLRUClock(void) {
     return (mstime()/LRU_CLOCK_RESOLUTION) & LRU_CLOCK_MAX;
 }
@@ -3488,6 +3541,7 @@ void monitorCommand(client *c) {
  * evicted in the whole database. */
 
 /* Create a new eviction pool. */
+/**创建新的回收池**/
 struct evictionPoolEntry *evictionPoolAlloc(void) {
     struct evictionPoolEntry *ep;
     int j;
@@ -3508,7 +3562,14 @@ struct evictionPoolEntry *evictionPoolAlloc(void) {
  * We insert keys on place in ascending order, so keys with the smaller
  * idle time are on the left, and keys with the higher idle time on the
  * right. */
-
+/**
+ * freeMemoryIfNeeded 工具函数，用于我们想要使一个key失效时存储进evictionPool回收池。
+ * 失效时间idle time 小于当前key的key会存储进回收池。
+ * 如果是空闲项，会存储进回收池。
+ *
+ * 以升序方式插入，失效时间越短，放在左边，反之放在右边
+ *
+ */
 #define EVICTION_SAMPLES_ARRAY_SIZE 16
 void evictionPoolPopulate(dict *sampledict, dict *keydict, struct evictionPoolEntry *pool) {
     int j, k, count;
@@ -3825,6 +3886,9 @@ void usage(void) {
     exit(1);
 }
 
+/**
+ * print logo
+ */
 void redisAsciiArt(void) {
 #include "asciilogo.h"
     char *buf = zmalloc(1024*16);
@@ -3925,6 +3989,9 @@ int checkForSentinelMode(int argc, char **argv) {
 }
 
 /* Function called at startup to load RDB or AOF file in memory. */
+/**
+ * 从磁盘加载RDB或者AOF文件到内存中
+ */
 void loadDataFromDisk(void) {
     long long start = ustime();
     if (server.aof_state == AOF_ON) {
@@ -4093,7 +4160,7 @@ int main(int argc, char **argv) {
 #ifdef INIT_SETPROCTITLE_REPLACEMENT
     spt_init(argc, argv);
 #endif
-    setlocale(LC_COLLATE,"");
+    setlocale(LC_COLLATE,"");/**配置地域的信息，设置当前程序使用的本地化信息**/
     zmalloc_enable_thread_safeness();
     zmalloc_set_oom_handler(redisOutOfMemoryHandler);
     srand(time(NULL)^getpid());
@@ -4123,6 +4190,28 @@ int main(int argc, char **argv) {
     if (strstr(argv[0],"redis-check-rdb") != NULL)
         redis_check_rdb_main(argc,argv);
 
+    /**
+     * 如果在启动Redis的时候没有指定配置文件，则Redis服务器在启动的时候是不会加载默认的配置文件(redis.conf)进行配置的。
+     * 为了让使用者按自己的要求配置服务器， Redis 允许用户在运行服务器时，
+     * 提供相应的配置文件（config file）或者显式的选项（options），
+     * Redis 在初始化完 server 变量之后， 会读入配置文件和选项，
+     * 然后根据这些配置来对 server 变量的属性值做相应的修改：
+     * 如果单纯执行 redis-server 命令，那么服务器以默认的配置来运行 Redis 。
+     * 另一方面， 如果给 Redis 服务器送入一个配置文件，
+     * 那么 Redis 将按配置文件的设置来更新服务器的状态。
+     *
+     * 比如说， 通过命令 redis-server /etc/my-redis.conf ，
+     * Redis 会根据 my-redis.conf 文件的内容来对服务器状态做相应的修改。
+     *
+     * 除此之外， 还可以显式地给服务器传入选项， 直接修改服务器配置。
+     *
+     * 举个例子， 通过命令 redis-server --port 10086 ， 可以让 Redis 服务器端口变更为 10086 。
+     *
+     * 当然， 同时使用配置文件和显式选项也是可以的， 如果文件和选项有冲突的地方， 那么优先使用选项所指定的配置值。
+     * 举个例子， 如果运行命令 redis-server /etc/my-redis.conf --port 10086 ，
+     * 并且 my-redis.conf 也指定了 port 选项， 那么服务器将优先使用 --port 10086
+     * （实际上是选项指定的值覆盖了配置文件中的值）。
+     */
     if (argc >= 2) {
         j = 1; /* First option to parse in argv[] */
         sds options = sdsempty();
@@ -4145,6 +4234,9 @@ int main(int argc, char **argv) {
         }
 
         /* First argument is the config file name? */
+        /**
+        * 判断第一个参数是否是配置文件名
+        */
         if (argv[j][0] != '-' || argv[j][1] != '-') {
             configfile = argv[j];
             server.configfile = getAbsolutePath(configfile);
@@ -4159,19 +4251,26 @@ int main(int argc, char **argv) {
          * configuration file. For instance --port 6380 will generate the
          * string "port 6380\n" to be parsed after the actual file name
          * is parsed, if any. */
+        /**
+        * 所有的其他选项解析并形式上拼接至配置文件。
+        * 比如： --port 6380 在真的文件名解析后，将会转换成 "port 6380\n"
+        */
         while(j != argc) {
             if (argv[j][0] == '-' && argv[j][1] == '-') {
                 /* Option name */
+                /**选项名字：port**/
                 if (!strcmp(argv[j], "--check-rdb")) {
                     /* Argument has no options, need to skip for parsing. */
                     j++;
                     continue;
                 }
+                /**上行末尾换行**/
                 if (sdslen(options)) options = sdscat(options,"\n");
                 options = sdscat(options,argv[j]+2);
                 options = sdscat(options," ");
             } else {
                 /* Option argument */
+                /**选项值：6380**/
                 options = sdscatrepr(options,argv[j],strlen(argv[j]));
                 options = sdscat(options," ");
             }
@@ -4197,6 +4296,8 @@ int main(int argc, char **argv) {
 
     initServer();
     if (background || server.pidfile) createPidFile();
+
+    /**服务器redisAsciiArt()打印出 Redis 的 ASCII LOGO 、服务器版本等信息， 表示所有功能模块已经就绪， 可以等待被使用了**/
     redisSetProcTitle(argv[0]);
     redisAsciiArt();
     checkTcpBacklogSettings();
