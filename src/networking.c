@@ -613,6 +613,13 @@ int clientHasPendingReplies(client *c) {
 }
 
 #define MAX_ACCEPTS_PER_CALL 1000
+/**
+ * 首先创建client客户端，然后是处理客户端的请求。
+ * 新添加的客户端令服务器的最大客户端数量达到了，那么向新客户端写入错误信息，并关闭新客户端
+ * @param fd
+ * @param flags
+ * @param ip
+ */
 static void acceptCommonHandler(int fd, int flags, char *ip) {
     client *c;
     if ((c = createClient(fd)) == NULL) {
@@ -626,6 +633,7 @@ static void acceptCommonHandler(int fd, int flags, char *ip) {
      * connection. Note that we create the client instead to check before
      * for this condition, since now the socket is already set in non-blocking
      * mode and we can send an error for free using the Kernel I/O */
+    /**如果设置了最大客户端数，而且已经达到上限，关闭连接，发送错误消息。**/
     if (listLength(server.clients) > server.maxclients) {
         char *err = "-ERR max number of clients reached\r\n";
 
@@ -642,6 +650,8 @@ static void acceptCommonHandler(int fd, int flags, char *ip) {
      * is no password set, nor a specific interface is bound, we don't accept
      * requests from non loopback interfaces. Instead we try to explain the
      * user what to do to fix it if needed. */
+    /**如果服务器运行在保护模式下（默认模式），并没有设置密码，也没有指定明确的绑定的接口，那么redistribution不接收本地环回接口。
+     * **/
     if (server.protected_mode &&
         server.bindaddr_count == 0 &&
         server.requirepass == NULL &&
@@ -683,6 +693,13 @@ static void acceptCommonHandler(int fd, int flags, char *ip) {
     c->flags |= flags;
 }
 
+/***
+ *
+ * @param el
+ * @param fd
+ * @param privdata
+ * @param mask
+ */
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     int cport, cfd, max = MAX_ACCEPTS_PER_CALL;
     char cip[NET_IP_STR_LEN];

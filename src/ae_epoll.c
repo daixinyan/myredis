@@ -30,6 +30,7 @@
 
 
 #include <sys/epoll.h>
+#include "common.h"
 
 typedef struct aeApiState {
     int epfd;
@@ -109,8 +110,10 @@ static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
     aeApiState *state = eventLoop->apidata;
     int retval, numevents = 0;
 
+    /**epoll_wait函数取出网络请求事件**/
     retval = epoll_wait(state->epfd,state->events,eventLoop->setsize,
             tvp ? (tvp->tv_sec*1000 + tvp->tv_usec/1000) : -1);
+    /**将需要处理的事件标识放入fire数组中**/
     if (retval > 0) {
         int j;
 
@@ -127,7 +130,7 @@ static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
             eventLoop->fired[j].mask = mask;
         }
     }
-    return numevents;
+    return numevents;/**返回网络请求个数**/
 }
 
 static char *aeApiName(void) {
