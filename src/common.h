@@ -7,5 +7,5 @@
 
 #endif //MYREDIS_COMMON_H
 
-#include "server.h"
-#include "ae.h"
+//#include "server.h"
+//#include "ae.h"
