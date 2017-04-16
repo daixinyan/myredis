@@ -26,7 +26,13 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-
+/***
+ * readQueryFromClient()->
+ * processInputBuffer()->
+ * processCommand()->
+ * call()->
+ * handleClientsBlockedOnLists
+ */
 #include "server.h"
 #include "cluster.h"
 #include "slowlog.h"
@@ -2424,6 +2430,7 @@ void call(client *c, int flags) {
     /* Call the command. */
     dirty = server.dirty;
     start = ustime();
+    /***回调***/
     c->cmd->proc(c);
     duration = ustime()-start;
     dirty = server.dirty-dirty;
@@ -2525,6 +2532,16 @@ void call(client *c, int flags) {
  * If C_OK is returned the client is still alive and valid and
  * other operations can be performed by the caller. Otherwise
  * if C_ERR is returned the client was destroyed (i.e. after QUIT). */
+/***
+ * 当这个函数调用时，c中保存了整个要执行的命令，参数在client argv/argc字段中。
+ * 这个函数执行命令，或者为客户端准备一个事务执行。
+ *
+ * 如果返回C_OK：客户端依然活跃，其他操作可以继续执行。
+ * 否则返回C_ERR: 客户端已经退出
+ *
+ * @param c
+ * @return
+ */
 int processCommand(client *c) {
     /* The QUIT command is handled separately. Normal command procs will
      * go through checking for replication and QUIT will cause trouble
@@ -2535,7 +2552,7 @@ int processCommand(client *c) {
         c->flags |= CLIENT_CLOSE_AFTER_REPLY;
         return C_ERR;
     }
-
+//todo
     /* Now lookup the command and check ASAP about trivial error conditions
      * such as wrong arity, bad command name and so forth. */
     c->cmd = c->lastcmd = lookupCommand(c->argv[0]->ptr);

@@ -356,6 +356,7 @@ int isObjectRepresentableAsLongLong(robj *o, long long *llval) {
 }
 
 /* Try to encode a string object in order to save space */
+/**编码字符串结构***/
 robj *tryObjectEncoding(robj *o) {
     long value;
     sds s = o->ptr;

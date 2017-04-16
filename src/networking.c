@@ -209,7 +209,7 @@ robj *dupLastObjectIfNeeded(list *reply) {
 /* -----------------------------------------------------------------------------
  * Low level functions to add more data to output buffers.
  * -------------------------------------------------------------------------- */
-
+/**添加数据至输出缓存**/
 int _addReplyToBuffer(client *c, const char *s, size_t len) {
     size_t available = sizeof(c->buf)-c->bufpos;
 
@@ -1274,6 +1274,10 @@ int processMultibulkBuffer(client *c) {
     return C_ERR;
 }
 
+/**
+ * 对输入字符串做出响应
+ * @param c
+ */
 void processInputBuffer(client *c) {
     server.current_client = c;
     /* Keep processing while there is something in the input buffer */
@@ -1322,7 +1326,13 @@ void processInputBuffer(client *c) {
     }
     server.current_client = NULL;
 }
-
+/***
+ * 读取客户端请求：
+ * @param el
+ * @param fd
+ * @param privdata
+ * @param mask
+ */
 void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     client *c = (client*) privdata;
     int nread, readlen;
@@ -1337,6 +1347,7 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
      * at the risk of requiring more read(2) calls. This way the function
      * processMultiBulkBuffer() can avoid copying buffers to create the
      * Redis Object representing the argument. */
+    /**对multi请求的处理：**/
     if (c->reqtype == PROTO_REQ_MULTIBULK && c->multibulklen && c->bulklen != -1
         && c->bulklen >= PROTO_MBULK_BIG_ARG)
     {

@@ -589,7 +589,7 @@ typedef struct client {
     time_t ctime;           /* Client creation time. */
     time_t lastinteraction; /* Time of the last interaction, used for timeout */
     time_t obuf_soft_limit_reached_time;
-    int flags;              /* Client flags: CLIENT_* macros. */
+    int flags;              /* Client flags: CLIENT_* macros. *//**当前是否已经multi等等**/
     int authenticated;      /* When requirepass is non-NULL. */
     int replstate;          /* Replication state if this is a slave. */
     int repl_put_online_on_ack; /* Install slave write handler on ACK. */
@@ -714,7 +714,7 @@ struct redisServer {
     char *executable;           /* Absolute executable file path. */
     char **exec_argv;           /* Executable argv vector (copy). */
     int hz;                     /* serverCron() calls frequency in hertz */
-    redisDb *db;
+    redisDb *db;                /***对应client当前选择的数据库 [0-dbnum)**/
     dict *commands;             /* Command table */
     dict *orig_commands;        /* Command table before command renaming. */
     aeEventLoop *el;

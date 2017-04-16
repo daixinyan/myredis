@@ -1263,7 +1263,7 @@ void cliLoadPreferences(void) {
     }
     sdsfree(rcfile);
 }
-
+/**读取并处理控制台命令**/
 static void repl(void) {
     sds historyfile = NULL;
     int history = 0;
@@ -2672,7 +2672,7 @@ int main(int argc, char **argv) {
         /* Note that in repl mode we don't abort on connection error.
          * A new attempt will be performed for every command send. */
         cliConnect(0);
-        repl();
+        repl();/**读取控制台命令**/
     }
 
     /* Otherwise, we have some arguments to execute */

@@ -98,7 +98,7 @@ void setCommand(client *c) {
     robj *expire = NULL;
     int unit = UNIT_SECONDS;
     int flags = OBJ_SET_NO_FLAGS;
-
+    /**该循环是对第三个以后的参数处理**/
     for (j = 3; j < c->argc; j++) {
         char *a = c->argv[j]->ptr;
         robj *next = (j == c->argc-1) ? NULL : c->argv[j+1];
