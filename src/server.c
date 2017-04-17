@@ -136,7 +136,12 @@ struct redisServer server; /* server global state */
   *
   * 参数个数：-N 即 >= N
   */
+ void darxan(client* c) {
+     addReply(c,shared.wrongtypeerr);
+ }
 struct redisCommand redisCommandTable[] = {
+
+    {"darxan", darxan, 2, "rF", NULL,1,1,1,0,0},
     {"get",getCommand,2,"rF",0,NULL,1,1,1,0,0},
     {"set",setCommand,-3,"wm",0,NULL,1,1,1,0,0},
     {"setnx",setnxCommand,3,"wmF",0,NULL,1,1,1,0,0},

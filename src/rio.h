@@ -40,46 +40,50 @@ struct _rio {
     /* Backend functions.
      * Since this functions do not tolerate short writes or reads the return
      * value is simplified to: zero on error, non zero on complete success. */
+    /**  后端方法：函数的返回值为0表示发生错误，返回值为非0表示操作成功。 **/
     size_t (*read)(struct _rio *, void *buf, size_t len);
     size_t (*write)(struct _rio *, const void *buf, size_t len);
-    off_t (*tell)(struct _rio *);
-    int (*flush)(struct _rio *);
+    off_t (*tell)(struct _rio *); /*** 读或写操作的当前偏移量***/
+    int (*flush)(struct _rio *);/**flushc啊哦做**/
     /* The update_cksum method if not NULL is used to compute the checksum of
      * all the data that was read or written so far. The method should be
      * designed so that can be called with the current checksum, and the buf
      * and len fields pointing to the new block of data to add to the checksum
      * computation. */
-    void (*update_cksum)(struct _rio *, const void *buf, size_t len);
+    void (*update_cksum)(struct _rio *, const void *buf, size_t len);/**更新校验和**/
 
     /* The current checksum */
-    uint64_t cksum;
+    uint64_t cksum;/**当前校验和**/
 
     /* number of bytes read or written */
-    size_t processed_bytes;
+    size_t processed_bytes;/**操作的字节数**/
 
     /* maximum single read or write chunk size */
-    size_t max_processing_chunk;
+    size_t max_processing_chunk;/**每次读或写操作的最大字节数**/
 
-    /* Backend-specific vars. */
+    /* Backend-specific vars. *//**io变量**/
     union {
         /* In-memory buffer target. */
+        /**内存缓冲区buffer结构体**/
         struct {
-            sds ptr;
-            off_t pos;
+            sds ptr;/** buffer中的内容，实际就是char数组**/
+            off_t pos;/**偏移量**/
         } buffer;
         /* Stdio file pointer target. */
+        /**文件结构体**/
         struct {
             FILE *fp;
-            off_t buffered; /* Bytes written since last fsync. */
-            off_t autosync; /* fsync after 'autosync' bytes written. */
+            off_t buffered; /* Bytes written since last fsync. *//**最后一个fsync后写入的字节**/
+            off_t autosync; /* fsync after 'autosync' bytes written. *//**多少字节进行一次fsync操作**/
         } file;
         /* Multiple FDs target (used to write to N sockets). */
+        /**封装了多个文件描述符结构体（用于写多个socket）**/
         struct {
-            int *fds;       /* File descriptors. */
-            int *state;     /* Error state of each fd. 0 (if ok) or errno. */
-            int numfds;
-            off_t pos;
-            sds buf;
+            int *fds;       /* File descriptors. *//**文件描述符数组**/
+            int *state;     /* Error state of each fd. 0 (if ok) or errno. *//**状态位，与fds对应**/
+            int numfds;     /**文件描述符的个数**/
+            off_t pos;      /**偏移量**/
+            sds buf;        /**缓冲区**/
         } fdset;
     } io;
 };
